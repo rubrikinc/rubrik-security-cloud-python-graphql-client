@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rsc-client"
+version = "1.0.20260316"
+description = "Low-level Python bindings for the Rubrik Security Cloud GraphQL API"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "sgqlc",
+    "requests",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rsc"]
+
+[tool.hatch.version]
+path = "pyproject.toml"

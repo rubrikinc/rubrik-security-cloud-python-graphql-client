@@ -1,0 +1,78 @@
+name: Update Schema
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "schemas/*.graphql"
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install sgqlc graphql-core hatch twine
+
+      - name: Find latest schema file
+        id: schema
+        run: |
+          SCHEMA_FILE=$(ls schemas/*.graphql | sort | tail -1)
+          BASENAME=$(basename "$SCHEMA_FILE" .graphql)
+          CURRENT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+          VERSION="${MAJOR}.${MINOR}.${BASENAME}"
+          echo "file=$SCHEMA_FILE" >> "$GITHUB_OUTPUT"
+          echo "date=$BASENAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Convert SDL to introspection JSON
+        run: |
+          python3 - <<'EOF'
+          import json
+          from graphql import build_schema, introspection_from_schema
+          with open("${{ steps.schema.outputs.file }}") as f:
+              sdl = f.read()
+          schema = build_schema(sdl)
+          result = introspection_from_schema(schema)
+          with open("/tmp/rsc_schema.json", "w") as f:
+              json.dump({"data": result}, f)
+          EOF
+
+      - name: Generate schema bindings
+        run: python3 -m sgqlc.codegen schema /tmp/rsc_schema.json src/rsc/schema.py
+
+      - name: Generate operation index
+        run: PYTHONPATH=src python3 -m rsc.mcp_indexer
+
+      - name: Update version in pyproject.toml
+        run: |
+          VERSION="${{ steps.schema.outputs.version }}"
+          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/rsc/schema.py src/rsc/mcp_index.json src/rsc/mcp_types.json pyproject.toml
+          git commit -m "chore: generate schema for ${{ steps.schema.outputs.date }}"
+          git tag "${{ steps.schema.outputs.version }}"
+          git push origin main --tags
+
+      - name: Build and publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          hatch build
+          twine upload dist/*
