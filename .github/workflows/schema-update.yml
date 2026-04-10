@@ -67,6 +67,7 @@ jobs:
           git add src/rsc/schema.py src/rsc/mcp_index.json src/rsc/mcp_types.json pyproject.toml
           git commit -m "chore: generate schema for ${{ steps.schema.outputs.date }}"
           git tag "${{ steps.schema.outputs.version }}"
+          git pull --rebase origin main
           git push origin main --tags
 
       - name: Build and publish to PyPI
