@@ -72,10 +72,5 @@ jobs:
           git pull --rebase origin main
           git push origin main --tags
 
-      - name: Build and publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: |
-          hatch build
-          twine upload dist/*
+      - name: Build
+        run: hatch build
