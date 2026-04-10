@@ -58,12 +58,13 @@ Operation names are camelCase (as in GraphQL), e.g. `slaDomains`, `vSphereVmNewC
 
 ## Updating the schema
 
-Add the new SDL file and push — CI handles everything:
+Replace the existing SDL file and push — CI handles everything:
 
 ```bash
+rm schemas/*.graphql
 cp ~/Downloads/rsc-schema.graphql schemas/$(date +%Y%m%d).graphql
 git add schemas/
-git commit -m "schema: add YYYYMMDD"
+git commit -m "schema: replace with YYYYMMDD"
 git push origin main
 ```
 
