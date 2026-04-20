@@ -1,5 +1,6 @@
 from sgqlc.endpoint.http import HTTPEndpoint
 
+from ._version import _user_agent
 from .auth import TokenManager
 from .config import Config, load_config, load_config_from_service_account
 
@@ -19,7 +20,10 @@ class RSCClient:
         token = self._token_manager.get_token()
         return HTTPEndpoint(
             f"{self._config.url}/api/graphql",
-            {"Authorization": f"Bearer {token}"},
+            {
+                "Authorization": f"Bearer {token}",
+                "User-Agent": _user_agent(),
+            },
         )
 
     def execute(self, operation, variables: dict = None):

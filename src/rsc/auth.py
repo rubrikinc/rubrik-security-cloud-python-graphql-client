@@ -8,6 +8,7 @@ from typing import Optional
 import requests
 
 from .config import Config
+from ._version import _user_agent
 
 
 class TokenManager:
@@ -41,6 +42,7 @@ class TokenManager:
                 "client_secret": self._config.client_secret,
                 "grant_type": "client_credentials",
             },
+            headers={"User-Agent": _user_agent()},
         )
         resp.raise_for_status()
         data = resp.json()
