@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 authors = [
-  { name = "Jake Robinson", email = "jake.robinson@rubrik.com" },
+  { name = "Rubrik, Inc." },
 ]
 keywords = ["rubrik", "rsc", "graphql", "security", "backup", "api", "client"]
 classifiers = [
