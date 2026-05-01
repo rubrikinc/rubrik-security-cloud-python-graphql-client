@@ -95,7 +95,19 @@ def build_types_index(sdl: str) -> dict:
                     "type": _type_to_str(f.type),
                     "description": _extract_comment(sdl, f.loc.start),
                 }
-            types[name] = {"kind": kind, "fields": fields}
+            entry: dict = {"kind": kind, "fields": fields}
+            if kind == "type" and getattr(defn, "interfaces", None):
+                entry["implements"] = [iface.name.value for iface in defn.interfaces]
+            types[name] = entry
+
+    # Second pass: populate implementors list on each interface.
+    for type_name, entry in types.items():
+        if entry["kind"] != "type":
+            continue
+        for iface_name in entry.get("implements", []):
+            if iface_name in types and types[iface_name]["kind"] == "interface":
+                types[iface_name].setdefault("implementors", []).append(type_name)
+
     return types
 
 
@@ -104,6 +116,63 @@ def find_latest_sdl(schemas_dir: Path) -> Path:
     if not files:
         raise FileNotFoundError(f"No .graphql files found in {schemas_dir}")
     return files[-1]
+
+
+_SCALARS = {"String", "Int", "Float", "Boolean", "ID"}
+
+import re as _re
+
+_CAMEL_RE = _re.compile(r"[A-Z][a-z]+|[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+")
+
+
+def _split_camel(s: str) -> list[str]:
+    """Split camelCase/PascalCase into lowercase tokens: 'complianceStatus' → ['compliance', 'status']."""
+    return [t.lower() for t in _CAMEL_RE.findall(s)]
+
+
+def _build_op_tokens(op_name: str, op_info: dict, types: dict) -> list[str]:
+    """Build BM25 token list for one operation: name + description + return type field names."""
+    tokens = _split_camel(op_name)
+    if op_info.get("description"):
+        # Plain words from description (already human-readable)
+        tokens += op_info["description"].lower().split()
+    seen: set[str] = set()
+
+    def collect_fields(type_name: str, depth: int) -> None:
+        bare = type_name.strip("[]!").strip()
+        if not bare or bare in _SCALARS or bare in seen or depth <= 0:
+            return
+        seen.add(bare)
+        td = types.get(bare, {})
+        if td.get("kind") not in ("type", "interface"):
+            return
+        for fname, finfo in td.get("fields", {}).items():
+            tokens.extend(_split_camel(fname))
+            if depth > 1:
+                collect_fields(finfo.get("type", ""), depth - 1)
+
+    collect_fields(op_info.get("return_type", ""), 2)
+    return tokens
+
+
+def build_bm25_corpus(ops: dict, types: dict, out_dir: Path) -> None:
+    """Build BM25 search corpus and save mcp_bm25_corpus.json."""
+    corpus: list[list[str]] = []
+    meta: list[dict] = []
+    for op_type, pool in [("query", ops["queries"]), ("mutation", ops["mutations"])]:
+        for name, info in pool.items():
+            corpus.append(_build_op_tokens(name, info, types))
+            meta.append({
+                "name": name,
+                "type": op_type,
+                "description": info.get("description") or "",
+                "return_type": info["return_type"],
+            })
+
+    out = {"meta": meta, "corpus": corpus}
+    corpus_path = out_dir / "mcp_bm25_corpus.json"
+    corpus_path.write_text(json.dumps(out, separators=(",", ":")))
+    print(f"  mcp_bm25_corpus.json: {len(corpus)} operations ({corpus_path.stat().st_size // 1024}KB)", flush=True)
 
 
 def main() -> None:
@@ -128,6 +197,8 @@ def main() -> None:
     types_path = out_dir / "mcp_types.json"
     types_path.write_text(json.dumps(types, separators=(",", ":")))
     print(f"  mcp_types.json: {len(types)} types ({types_path.stat().st_size // 1024}KB)")
+
+    build_bm25_corpus(ops, types, out_dir)
 
 
 if __name__ == "__main__":

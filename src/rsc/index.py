@@ -22,9 +22,18 @@ from __future__ import annotations
 
 import importlib.resources
 import json
+import re
 
 _ops_index: dict | None = None
 _types_index: dict | None = None
+_bm25_index: object | None = None  # rank_bm25.BM25Okapi once loaded
+_bm25_meta: list[dict] | None = None
+
+_CAMEL_RE = re.compile(r"[A-Z][a-z]+|[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+")
+
+
+def _split_camel(s: str) -> list[str]:
+    return [t.lower() for t in _CAMEL_RE.findall(s)]
 
 
 def _get_ops() -> dict:
@@ -43,38 +52,54 @@ def _get_types() -> dict:
     return _types_index
 
 
+def _get_bm25():
+    global _bm25_index, _bm25_meta
+    if _bm25_index is None:
+        from rank_bm25 import BM25Okapi  # type: ignore
+
+        data = json.loads((importlib.resources.files("rsc") / "mcp_bm25_corpus.json").read_text())
+        _bm25_meta = data["meta"]
+        _bm25_index = BM25Okapi(data["corpus"])
+    return _bm25_index, _bm25_meta
+
+
 def search_operations(search: str, operation_type: str = "all") -> list[dict]:
-    """Search queries and/or mutations by name or description substring.
+    """Search queries and/or mutations by BM25 relevance with camelCase tokenization.
+
+    Finds operations by name, description, and return-type field names. CamelCase
+    splitting means "compliance" matches operations whose return types contain fields
+    like ``complianceStatus`` or ``protectionStatus``.
 
     Args:
-        search: Case-insensitive substring to match against operation names
-                and descriptions.
+        search: Natural-language query or keywords.
         operation_type: One of "query", "mutation", or "all" (default).
 
     Returns:
-        List of dicts with keys: name, type, description, return_type.
+        List of dicts with keys: name, type, description, return_type, score.
     """
-    ops = _get_ops()
-    search_lower = search.lower()
+    index, meta = _get_bm25()
+    query_tokens = _split_camel(search) + search.lower().split()
+    scores = index.get_scores(query_tokens)
+
+    candidates = [
+        (i, float(scores[i]))
+        for i, m in enumerate(meta)
+        if operation_type == "all" or m["type"] == operation_type
+    ]
+    candidates.sort(key=lambda x: x[1], reverse=True)
+
     results = []
-
-    pools: list[tuple[str, dict]] = []
-    if operation_type in ("query", "all"):
-        pools.append(("query", ops["queries"]))
-    if operation_type in ("mutation", "all"):
-        pools.append(("mutation", ops["mutations"]))
-
-    for op_type, pool in pools:
-        for name, info in pool.items():
-            desc = info.get("description") or ""
-            if search_lower in name.lower() or search_lower in desc.lower():
-                results.append({
-                    "name": name,
-                    "type": op_type,
-                    "description": desc,
-                    "return_type": info["return_type"],
-                })
-
+    for i, score in candidates[:10]:
+        if score <= 0:
+            break
+        m = meta[i]
+        results.append({
+            "name": m["name"],
+            "type": m["type"],
+            "description": m["description"],
+            "return_type": m["return_type"],
+            "score": round(score, 4),
+        })
     return results
 
 
