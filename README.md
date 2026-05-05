@@ -165,7 +165,7 @@ print(data.success)
 
 ## Discovery index
 
-The package ships two pre-generated JSON indexes built from the GraphQL SDL: `mcp_index.json` (all queries and mutations with their argument signatures) and `mcp_types.json` (all named types with their fields, enum values, or union members). These are parsed once at import time and cached in memory.
+The package ships pre-generated indexes built from the GraphQL SDL: `mcp_index.json` (all queries and mutations with their argument signatures), `mcp_types.json` (all named types with their fields, enum values, or union members), and `mcp_bm25_corpus.json` (a BM25 search corpus for relevance-ranked operation discovery). These are parsed once at import time and cached in memory.
 
 ### Why it exists
 
@@ -188,11 +188,11 @@ from rsc import (
 
 #### `search_operations(search, operation_type="all")`
 
-Case-insensitive substring search across operation names and descriptions. Useful for finding the right operation when you know roughly what you're looking for.
+BM25 relevance search across operation names, descriptions, and return-type field names, with camelCase tokenization. Returns results ranked by relevance score.
 
 ```python
 search_operations("snapshot", "query")
-# [{"name": "...", "type": "query", "description": "...", "return_type": "..."}, ...]
+# [{"name": "...", "type": "query", "description": "...", "return_type": "...", "score": 4.2}, ...]
 
 search_operations("assign", "mutation")
 ```
@@ -235,7 +235,7 @@ The indexes are regenerated automatically by the CI workflow whenever a new sche
 PYTHONPATH=src python3 -m rsc.mcp_indexer
 ```
 
-Then commit the updated `mcp_index.json` and `mcp_types.json`.
+Then commit the updated `mcp_index.json`, `mcp_types.json`, and `mcp_bm25_corpus.json`.
 
 ---
 
