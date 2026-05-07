@@ -26,6 +26,12 @@ from rsc import RSCClient
 client = RSCClient(service_account_file="~/Downloads/my-service-account.json")
 ```
 
+Restrict the file to owner-read/write only to protect your credentials:
+
+```bash
+chmod 600 /path/to/service-account.json
+```
+
 Or set an environment variable and call `RSCClient()` with no arguments:
 
 ```bash
