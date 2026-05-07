@@ -1,7 +1,7 @@
 import json
 import os
 import stat
-import warnings
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -31,10 +31,10 @@ def _warn_if_open_permissions(path) -> None:
     except OSError:
         return
     if mode & 0o077:
-        warnings.warn(
-            f"Credential file '{path}' has open permissions "
+        print(
+            f"WARNING: Credential file '{path}' has open permissions "
             f"({stat.filemode(mode)}). Restrict to 0o600 to protect your credentials.",
-            stacklevel=3,
+            file=sys.stderr,
         )
 
 

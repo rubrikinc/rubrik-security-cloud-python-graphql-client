@@ -43,12 +43,14 @@ class TokenManager:
                 "grant_type": "client_credentials",
             },
             headers={"User-Agent": _user_agent()},
+            timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
         token = data["access_token"]
         expires_in = data.get("expires_in", 3600)
         cache = {"access_token": token, "expires_at": time.time() + expires_in}
-        self._cache_file.write_text(json.dumps(cache))
-        os.chmod(self._cache_file, 0o600)
+        fd = os.open(self._cache_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(cache, f)
         return token

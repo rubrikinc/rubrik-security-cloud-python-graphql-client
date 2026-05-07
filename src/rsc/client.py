@@ -28,6 +28,7 @@ class RSCClient:
                 "Authorization": f"Bearer {token}",
                 "User-Agent": _user_agent(),
             },
+            timeout=30,
         )
 
     def execute(self, operation, variables: dict = None, max_records: int = None):
@@ -39,6 +40,8 @@ class RSCClient:
             (k for k, v in data.items() if isinstance(v, dict) and "nodes" in v and "pageInfo" in v),
             None,
         )
+
+        result.pop("headers", None)
 
         if conn_key is None:
             return result
