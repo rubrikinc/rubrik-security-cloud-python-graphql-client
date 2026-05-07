@@ -4,15 +4,22 @@ on:
   push:
     tags:
       - "[0-9]*"
+  workflow_run:
+    workflows: ["Update Schema"]
+    types: [completed]
+    branches: [main]
 
 jobs:
   publish:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
