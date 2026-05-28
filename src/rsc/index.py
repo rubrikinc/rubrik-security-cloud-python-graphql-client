@@ -36,6 +36,21 @@ def _split_camel(s: str) -> list[str]:
     return [t.lower() for t in _CAMEL_RE.findall(s)]
 
 
+# Lazy Snowball English (Porter2) stemmer -- mirrors mcp_indexer._stem so build
+# and query tokenization stay symmetric. Initialized on first call to keep the
+# import path of `rsc.index` cheap; the first search call pays the ~10ms cost.
+_stemmer = None
+
+
+def _stem(token: str) -> str:
+    global _stemmer
+    if _stemmer is None:
+        import snowballstemmer  # type: ignore
+
+        _stemmer = snowballstemmer.stemmer("english")
+    return _stemmer.stemWord(token)
+
+
 def _get_ops() -> dict:
     global _ops_index
     if _ops_index is None:
@@ -78,7 +93,8 @@ def search_operations(search: str, operation_type: str = "all") -> list[dict]:
         List of dicts with keys: name, type, description, return_type, score.
     """
     index, meta = _get_bm25()
-    query_tokens = _split_camel(search) + search.lower().split()
+    raw_tokens = _split_camel(search) + search.lower().split()
+    query_tokens = [_stem(t) for t in raw_tokens]
     scores = index.get_scores(query_tokens)
 
     candidates = [

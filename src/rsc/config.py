@@ -16,7 +16,7 @@ class Config:
 
     def __post_init__(self):
         parsed = urlparse(self.url)
-        if parsed.scheme != "https":
+        if parsed.scheme != "https" and os.environ.get("RSC_INSECURE_HTTP") != "1":
             raise ValueError(
                 f"RSC URL must use HTTPS (got scheme '{parsed.scheme}'): {self.url}"
             )

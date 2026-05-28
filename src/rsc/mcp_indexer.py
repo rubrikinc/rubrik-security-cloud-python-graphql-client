@@ -130,8 +130,33 @@ def _split_camel(s: str) -> list[str]:
     return [t.lower() for t in _CAMEL_RE.findall(s)]
 
 
+# Snowball English (Porter2) stemmer. Initialized lazily so that simply importing
+# this module is cheap, and only the corpus build path pays the cost. Stemming
+# collapses word-form variants ("upgrade"/"upgrades"/"upgrading"/"upgraded" → "upgrad",
+# "cluster"/"clusters" → "cluster") so natural English prompts hit the same tokens
+# regardless of inflection. Applied symmetrically at build and query time.
+_stemmer = None
+
+
+def _stem(token: str) -> str:
+    global _stemmer
+    if _stemmer is None:
+        import snowballstemmer  # type: ignore
+
+        _stemmer = snowballstemmer.stemmer("english")
+    return _stemmer.stemWord(token)
+
+
+def _stem_all(tokens: list[str]) -> list[str]:
+    return [_stem(t) for t in tokens]
+
+
 def _build_op_tokens(op_name: str, op_info: dict, types: dict) -> list[str]:
-    """Build BM25 token list for one operation: name + description + return type field names."""
+    """Build BM25 token list for one operation: name + description + return type field names.
+
+    All emitted tokens are passed through the Porter2 stemmer so word-form variants
+    collapse to a single stem.
+    """
     tokens = _split_camel(op_name)
     if op_info.get("description"):
         # Plain words from description (already human-readable)
@@ -152,7 +177,7 @@ def _build_op_tokens(op_name: str, op_info: dict, types: dict) -> list[str]:
                 collect_fields(finfo.get("type", ""), depth - 1)
 
     collect_fields(op_info.get("return_type", ""), 2)
-    return tokens
+    return _stem_all(tokens)
 
 
 def build_bm25_corpus(ops: dict, types: dict, out_dir: Path) -> None:
@@ -175,12 +200,76 @@ def build_bm25_corpus(ops: dict, types: dict, out_dir: Path) -> None:
     print(f"  mcp_bm25_corpus.json: {len(corpus)} operations ({corpus_path.stat().st_size // 1024}KB)", flush=True)
 
 
+# Stopwords stripped from field descriptions before BM25 ingestion.
+# Field descriptions are short (often a single sentence), so removing high-frequency
+# function words keeps the IDF signal focused on semantic terms.
+_FIELD_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have",
+    "in", "is", "it", "its", "of", "on", "or", "that", "the", "this", "to", "was",
+    "were", "will", "with",
+})
+
+
+_DESCRIPTION_TOKEN_RE = _re.compile(r"[A-Za-z][A-Za-z0-9]*")
+
+
+def _build_field_tokens(type_name: str, field_name: str, description: str | None) -> list[str]:
+    """Tokenize a (type, field, description) row for BM25 ingestion.
+
+    CamelCase split applies to type and field names so that 'activeUsers' → ['active', 'users']
+    and 'lastLogin' → ['last', 'login']. The description is split on any non-alphanumeric
+    boundary so that hyphenated phrases like 'logged-in' produce two tokens. Stopwords
+    are dropped and any remaining camelCase token is itself split.
+    """
+    tokens = _split_camel(type_name) + _split_camel(field_name)
+    if description:
+        for raw in _DESCRIPTION_TOKEN_RE.findall(description):
+            # Re-split camelCase tokens that appear inline (e.g. `complianceStatus`
+            # mentioned in prose) so users searching for "compliance" still match.
+            for sub in _split_camel(raw):
+                if sub and sub not in _FIELD_STOPWORDS:
+                    tokens.append(sub)
+    # Stopword check happens above on raw (lowercased) words; stemming after keeps
+    # the stopword list readable and avoids "the" → "the" rounds-tripping concerns.
+    return _stem_all(tokens)
+
+
+def build_fields_corpus(types: dict, schema_version: str, out_dir: Path) -> None:
+    """Build a per-field BM25 search corpus and save mcp_fields_corpus.json.
+
+    Indexes every field on every object and interface type. Enums, inputs, and
+    unions are excluded -- the search use case is finding semantically meaningful
+    return-type fields (e.g. ``Group.activeUsers``), and the omitted kinds either
+    have no fields or rarely carry descriptive prose.
+    """
+    corpus: list[list[str]] = []
+    meta: list[dict] = []
+    for type_name, td in types.items():
+        if td.get("kind") not in ("type", "interface"):
+            continue
+        for field_name, finfo in td.get("fields", {}).items():
+            description = finfo.get("description")
+            corpus.append(_build_field_tokens(type_name, field_name, description))
+            meta.append({
+                "type": type_name,
+                "field": field_name,
+                "description": description or "",
+                "field_type": finfo.get("type", ""),
+            })
+
+    out = {"schema_version": schema_version, "meta": meta, "corpus": corpus}
+    corpus_path = out_dir / "mcp_fields_corpus.json"
+    corpus_path.write_text(json.dumps(out, separators=(",", ":")))
+    print(f"  mcp_fields_corpus.json: {len(corpus)} fields ({corpus_path.stat().st_size // 1024}KB)", flush=True)
+
+
 def main() -> None:
     repo_root = Path(__file__).parent.parent.parent
     schemas_dir = repo_root / "schemas"
     out_dir = Path(__file__).parent
 
     sdl_file = find_latest_sdl(schemas_dir)
+    schema_version = sdl_file.stem  # YYYYMMDD
     print(f"Building index from {sdl_file.name}...", flush=True)
     sdl = sdl_file.read_text()
 
@@ -199,6 +288,7 @@ def main() -> None:
     print(f"  mcp_types.json: {len(types)} types ({types_path.stat().st_size // 1024}KB)")
 
     build_bm25_corpus(ops, types, out_dir)
+    build_fields_corpus(types, schema_version, out_dir)
 
 
 if __name__ == "__main__":
