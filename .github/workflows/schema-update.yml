@@ -68,9 +68,13 @@ jobs:
           git add src/rsc/schema.py src/rsc/mcp_index.json src/rsc/mcp_types.json src/rsc/mcp_bm25_corpus.json src/rsc/mcp_fields_corpus.json pyproject.toml
           git restore --staged .github/
           git commit -m "chore: generate schema for ${{ steps.schema.outputs.date }}"
-          git tag "${{ steps.schema.outputs.version }}"
           git pull --rebase origin main
-          git push origin main --tags
+          git push origin main
+          VERSION="${{ steps.schema.outputs.version }}"
+          if ! git ls-remote --tags origin | grep -q "refs/tags/${VERSION}$"; then
+            git tag "$VERSION"
+            git push origin "$VERSION"
+          fi
 
       - name: Build
         run: hatch build
