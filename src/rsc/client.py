@@ -2,7 +2,7 @@ import sys
 
 from sgqlc.endpoint.http import HTTPEndpoint
 
-from ._version import _user_agent
+from ._version import _sdk_headers
 from .auth import TokenManager
 from .config import Config, load_config, load_config_from_service_account
 
@@ -10,7 +10,8 @@ _LARGE_RESULT_THRESHOLD = 1000
 
 
 class RSCClient:
-    def __init__(self, config: Config = None, service_account_file=None):
+    def __init__(self, config: Config = None, service_account_file=None,
+                 product: str = None, product_version: str = None):
         if config is not None:
             self._config = config
         elif service_account_file is not None:
@@ -18,16 +19,17 @@ class RSCClient:
         else:
             self._config = load_config()
         self._token_manager = TokenManager(self._config)
+        self._product = product
+        self._product_version = product_version
 
     @property
     def endpoint(self) -> HTTPEndpoint:
         token = self._token_manager.get_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        headers.update(_sdk_headers(self._product, self._product_version))
         return HTTPEndpoint(
             f"{self._config.url}/api/graphql",
-            {
-                "Authorization": f"Bearer {token}",
-                "User-Agent": _user_agent(),
-            },
+            headers,
             timeout=30,
         )
 
