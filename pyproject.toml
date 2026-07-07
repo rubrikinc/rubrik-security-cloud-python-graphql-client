@@ -25,10 +25,10 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "sgqlc>=9.0",
-    "requests>=2.28",
-    "rank-bm25>=0.2",
-    "snowballstemmer>=2.2",
+    "sgqlc==18",
+    "requests==2.32.5",
+    "rank-bm25==0.2.2",
+    "snowballstemmer==3.1.1",
 ]
 
 [project.optional-dependencies]
