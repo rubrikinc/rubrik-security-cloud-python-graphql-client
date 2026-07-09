@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[test]"
+      - run: pytest tests/ -v
+
+  supply-chain:
+    name: Supply chain (locked install, audit, SBOM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Verify uv.lock is in sync with pyproject.toml
+        # Fails if the lockfile has drifted from pyproject.toml (e.g. a dependency
+        # version was changed without re-locking).
+        run: uv lock --check
+      - name: Install from the locked, hash-pinned dependency set
+        # uv verifies each package against the per-package hashes in uv.lock;
+        # this is the hash-enforced, reproducible install path.
+        run: uv sync --locked --all-extras
+      - name: Audit dependencies for known vulnerabilities (report-only)
+        # Report-only for now to avoid blocking on transitive advisories; flip to
+        # a hard gate once the dependency set is triaged clean.
+        continue-on-error: true
+        run: uv run --with pip-audit pip-audit
+      - name: Generate CycloneDX SBOM
+        run: uv run --with cyclonedx-bom cyclonedx-py environment -o sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
