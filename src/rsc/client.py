@@ -46,6 +46,40 @@ class RSCClient:
         result.pop("headers", None)
 
         if conn_key is None:
+            # Truncation guard. Responses paginate two ways: `nodes` + `pageInfo`
+            # (auto-paginated below), or a `data` list plus `hasMore` / `nextCursor`
+            # (not auto-paginated). In either case, if this single response is not
+            # the full set, warn so a first page isn't mistaken for everything.
+            for key, val in data.items():
+                if not isinstance(val, dict):
+                    continue
+                items = (
+                    val.get("nodes") if isinstance(val.get("nodes"), list)
+                    else val.get("data") if isinstance(val.get("data"), list)
+                    else None
+                )
+                if items is None:
+                    continue
+                total = (
+                    val.get("count") if isinstance(val.get("count"), int)
+                    else val.get("total") if isinstance(val.get("total"), int)
+                    else None
+                )
+                # Trust `hasMore` when present; fall back to a non-empty
+                # `nextCursor` only when `hasMore` is absent (a populated cursor
+                # on a final page shouldn't read as "more available").
+                flag = val.get("hasMore")
+                has_more = flag is True or (flag is None and bool(val.get("nextCursor")))
+                if (total is not None and total > len(items)) or has_more:
+                    shown = f"{len(items)} of {total}" if total is not None else str(len(items))
+                    print(
+                        f"Warning: '{key}' returned {shown} records (first page only). "
+                        "More results are available — paginate to retrieve the rest "
+                        "(cursor connections: add `pageInfo` + `$after`/`after: $after`; "
+                        "`hasMore`/`nextCursor` responses: re-request with the returned "
+                        "`nextCursor`).",
+                        file=sys.stderr,
+                    )
             return result
 
         conn = data[conn_key]
@@ -60,8 +94,23 @@ class RSCClient:
         while conn["pageInfo"]["hasNextPage"]:
             if max_records and len(all_nodes) >= max_records:
                 break
-            variables["after"] = conn["pageInfo"]["endCursor"]
+            after = conn["pageInfo"]["endCursor"]
+            variables["after"] = after
             conn = self.endpoint(operation, variables=variables)["data"][conn_key]
+            # Guard against a non-advancing cursor. If the operation does not
+            # declare `$after` and pass `after: $after` to the connection, the
+            # injected cursor is ignored and the server returns the same page
+            # (same endCursor) with hasNextPage=true — an infinite loop on page 1.
+            # Detect the repeated cursor and stop rather than loop forever.
+            if conn["pageInfo"]["endCursor"] == after:
+                print(
+                    "Warning: pagination cursor did not advance; returning results "
+                    "gathered so far. The operation likely omits `after: $after` — "
+                    "add `$after: String` to the operation and pass `after: $after` "
+                    "to the connection field to paginate.",
+                    file=sys.stderr,
+                )
+                break
             all_nodes.extend(conn["nodes"])
 
         result["data"][conn_key]["nodes"] = all_nodes[:max_records] if max_records else all_nodes
