@@ -123,6 +123,88 @@ def test_truncation_warns_per_field(capsys):
     assert "'a'" in err and "'b'" in err
 
 
+def test_truncation_scans_field_alongside_paginated_connection(capsys):
+    # The auto-paginated connection ('c') exhausts cleanly, but a sibling
+    # 'data'/'hasMore' field ('side') is truncated. The scan must run over all
+    # fields, not just when no connection was found, so 'side' is still flagged.
+    resp = {"data": {
+        "c": {"nodes": [{"id": 1}], "pageInfo": {"hasNextPage": False, "endCursor": "E"}},
+        "side": {"data": [{"id": 2}], "hasMore": True},
+    }}
+    _FakeClient(lambda op, v, n: dict(resp)).execute("q")
+    err = capsys.readouterr().err
+    assert "'side'" in err
+    assert "'c'" not in err  # the exhausted connection is not flagged
+
+
+def test_truncation_second_relay_connection(capsys):
+    # Only the first connection is auto-paginated; a second Relay connection
+    # ('c2') with hasNextPage=true must still be reported as truncated.
+    resp = {"data": {
+        "c1": {"nodes": [{"id": 1}], "pageInfo": {"hasNextPage": False, "endCursor": "E"}},
+        "c2": {"nodes": [{"id": 2}], "pageInfo": {"hasNextPage": True, "endCursor": "F"}},
+    }}
+    _FakeClient(lambda op, v, n: dict(resp)).execute("q")
+    assert "'c2'" in capsys.readouterr().err
+
+
+def test_returned_pageinfo_reflects_truncation_when_capped():
+    # When max_records caps the result, the returned pageInfo.hasNextPage must
+    # stay true so a consumer that only sees the return value (not stderr) can
+    # detect the result is incomplete.
+    def responder(op, variables, n):
+        if variables.get("after") is None:
+            return _page([{"id": i} for i in range(1000)], True, "P1", count=1500)
+        return _page([{"id": i} for i in range(1000, 2000)], True, "P2", count=1500)
+    client = _FakeClient(responder)
+    result = client.execute(
+        "query($after:String){ c(after:$after){ count nodes { id } pageInfo { hasNextPage endCursor } } }",
+        max_records=500,
+    )
+    assert result["data"]["c"]["pageInfo"]["hasNextPage"] is True
+
+
+def test_returned_pageinfo_false_when_complete():
+    # A fully-drained connection must report hasNextPage=false on return.
+    def responder(op, variables, n):
+        if variables.get("after") is None:
+            return _page([{"id": 1}], True, "P1")
+        return _page([{"id": 2}], False, "P2")
+    client = _FakeClient(responder)
+    result = client.execute(
+        "query($after:String){ c(after:$after){ nodes { id } pageInfo { hasNextPage endCursor } } }"
+    )
+    assert result["data"]["c"]["pageInfo"]["hasNextPage"] is False
+
+
+def test_max_records_zero_returns_no_records(capsys):
+    # max_records=0 is a real cap (0 records), not "unbounded". A falsy-check
+    # would treat it as no cap and paginate the whole connection.
+    def responder(op, variables, n):
+        return _page([{"id": i} for i in range(1000)], True, "P1", count=1500)
+    client = _FakeClient(responder)
+    result = client.execute(
+        "query($after:String){ c(after:$after){ count nodes { id } pageInfo { hasNextPage endCursor } } }",
+        max_records=0,
+    )
+    assert len(result["data"]["c"]["nodes"]) == 0
+    assert client.calls == 1  # did not paginate
+
+
+def test_non_bool_hasmore_string_true(capsys):
+    # Some endpoints emit hasMore as a string. "true" must read as more-available.
+    resp = {"data": {"x": {"data": [{"id": 1}], "hasMore": "true"}}}
+    _FakeClient(lambda op, v, n: dict(resp)).execute("q")
+    assert "first page only" in capsys.readouterr().err
+
+
+def test_non_bool_hasmore_string_false(capsys):
+    # "false" (string) must not false-positive as more-available.
+    resp = {"data": {"x": {"data": [{"id": 1}], "hasMore": "false", "nextCursor": "X"}}}
+    _FakeClient(lambda op, v, n: dict(resp)).execute("q")
+    assert capsys.readouterr().err == ""
+
+
 # --------------------------------------------------------------------------- #
 # max_records cap
 # --------------------------------------------------------------------------- #
