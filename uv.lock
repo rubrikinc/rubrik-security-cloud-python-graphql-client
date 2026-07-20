@@ -545,7 +545,7 @@ wheels = [
 
 [[package]]
 name = "rsc-client"
-version = "1.5.20260601"
+version = "1.6.20260601"
 source = { editable = "." }
 dependencies = [
     { name = "rank-bm25" },

@@ -82,9 +82,22 @@ Commit the resulting `mcp_index.json` and `mcp_types.json`.
 
 ## Versioning
 
-Format: `X.Y.YYYYMMDD` (e.g. `1.0.20260316`)
-- **YYYYMMDD** — bumped automatically by CI for each new schema
-- **X.Y** — bumped manually for breaking (major) or additive (minor) library API changes
+Format: `X.Y.YYYYMMDD` (e.g. `1.0.20260316`). Three independent parts:
+
+- **`YYYYMMDD` — the SCHEMA date, NOT a release date.** It identifies the RSC
+  GraphQL schema the client was generated against. Change it **only** when adding
+  a new schema — CI sets it automatically as part of "Updating the schema" above.
+  **Never bump it for a code/library change, and never set it to "today" just to
+  cut a release** — that falsely implies a new schema was shipped.
+- **`X` (major)** — bump manually for a breaking library API change.
+- **`Y` (minor)** — bump manually for an additive, backward-compatible library
+  change (new behavior, safety guards, bug fixes).
+
+To release a **code change with no new schema**, bump **`Y` only** and leave
+`YYYYMMDD` unchanged. Example: adding pagination guards to `execute()` (additive)
+is `1.5.20260601` → **`1.6.20260601`**, NOT `1.5.<today>`. Any version change in
+`pyproject.toml` triggers `publish.yml` to publish to PyPI, so keep the version
+in sync with `uv.lock` (run `uv lock` after editing it).
 
 ## Credential loading precedence
 
