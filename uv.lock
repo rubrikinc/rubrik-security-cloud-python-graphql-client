@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.9"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -545,7 +545,7 @@ wheels = [
 
 [[package]]
 name = "rsc-client"
-version = "1.6.20260601"
+version = "1.6.20260720"
 source = { editable = "." }
 dependencies = [
     { name = "rank-bm25" },
