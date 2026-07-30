@@ -2,6 +2,13 @@ name: Publish to PyPI
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to check out (defaults to main)"
+        required: false
+        type: string
+        default: main
   push:
     branches:
       - main
@@ -20,6 +27,8 @@ jobs:
       should_publish: ${{ steps.version_check.outputs.should_publish }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Check version against PyPI
         id: version_check
@@ -43,6 +52,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
