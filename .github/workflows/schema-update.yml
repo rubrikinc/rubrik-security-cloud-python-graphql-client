@@ -78,8 +78,17 @@ jobs:
 
   publish:
     needs: generate
-    uses: ./.github/workflows/publish.yml
-    with:
-      ref: main
+    runs-on: ubuntu-latest
+    environment: pypi
     permissions:
       id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install hatch
+      - run: hatch build
+      - uses: pypa/gh-action-pypi-publish@release/v1
