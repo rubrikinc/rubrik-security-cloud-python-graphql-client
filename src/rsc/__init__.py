@@ -2,6 +2,7 @@ from .client import RSCClient
 from .fields import field_index_schema_version, search_fields
 from .index import (
     search_operations,
+    search_types,
     describe_operation,
     describe_type,
     list_queries,
@@ -19,4 +20,5 @@ __all__ = [
     "list_types",
     "search_fields",
     "search_operations",
+    "search_types",
 ]
