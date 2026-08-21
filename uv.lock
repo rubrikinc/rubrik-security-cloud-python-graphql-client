@@ -446,7 +446,7 @@ test = [
 requires-dist = [
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
     { name = "rank-bm25", specifier = "==0.2.2" },
-    { name = "requests", specifier = ">=2.34.0" },
+    { name = "requests", specifier = "==2.34.2" },
     { name = "sgqlc", specifier = "==18" },
     { name = "snowballstemmer", specifier = "==3.1.1" },
 ]

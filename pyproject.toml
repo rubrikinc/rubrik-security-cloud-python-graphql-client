@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "sgqlc==18",
-    "requests>=2.34.0",
+    "requests==2.34.2",
     "rank-bm25==0.2.2",
     "snowballstemmer==3.1.1",
 ]
