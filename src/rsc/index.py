@@ -28,6 +28,8 @@ _ops_index: dict | None = None
 _types_index: dict | None = None
 _bm25_index: object | None = None  # rank_bm25.BM25Okapi once loaded
 _bm25_meta: list[dict] | None = None
+_types_bm25_index: object | None = None  # rank_bm25.BM25Okapi once loaded
+_types_bm25_meta: list[dict] | None = None
 
 _CAMEL_RE = re.compile(r"[A-Z][a-z]+|[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+")
 
@@ -78,6 +80,19 @@ def _get_bm25():
     return _bm25_index, _bm25_meta
 
 
+def _get_types_bm25():
+    global _types_bm25_index, _types_bm25_meta
+    if _types_bm25_index is None:
+        from rank_bm25 import BM25Okapi  # type: ignore
+
+        data = json.loads(
+            (importlib.resources.files("rsc") / "mcp_types_bm25_corpus.json").read_text()
+        )
+        _types_bm25_meta = data["meta"]
+        _types_bm25_index = BM25Okapi(data["corpus"])
+    return _types_bm25_index, _types_bm25_meta
+
+
 def search_operations(search: str, operation_type: str = "all") -> list[dict]:
     """Search queries and/or mutations by BM25 relevance with camelCase tokenization.
 
@@ -114,6 +129,40 @@ def search_operations(search: str, operation_type: str = "all") -> list[dict]:
             "type": m["type"],
             "description": m["description"],
             "return_type": m["return_type"],
+            "score": round(score, 4),
+        })
+    return results
+
+
+def search_types(search: str) -> list[dict]:
+    """Search the schema's type graph by BM25 relevance.
+
+    Each result is a GraphQL type whose fields semantically match the query.
+    The 'ops' field lists operations that return this type — use as candidates
+    when finding an operation for a domain concept (e.g. 'cluster', 'SLA domain').
+
+    Args:
+        search: Natural-language query or keywords.
+
+    Returns:
+        List of dicts with keys: name, ops, score.
+    """
+    index, meta = _get_types_bm25()
+    raw_tokens = _split_camel(search) + search.lower().split()
+    query_tokens = [_stem(t) for t in raw_tokens]
+    scores = index.get_scores(query_tokens)
+
+    candidates = [(i, float(scores[i])) for i in range(len(meta))]
+    candidates.sort(key=lambda x: x[1], reverse=True)
+
+    results = []
+    for i, score in candidates[:10]:
+        if score <= 0:
+            break
+        m = meta[i]
+        results.append({
+            "name": m["name"],
+            "ops": m["ops"],
             "score": round(score, 4),
         })
     return results

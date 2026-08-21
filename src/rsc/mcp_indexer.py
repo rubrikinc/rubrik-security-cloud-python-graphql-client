@@ -263,6 +263,137 @@ def build_fields_corpus(types: dict, schema_version: str, out_dir: Path) -> None
     print(f"  mcp_fields_corpus.json: {len(corpus)} fields ({corpus_path.stat().st_size // 1024}KB)", flush=True)
 
 
+_TYPE_SKIP_FIELDS = frozenset({
+    "edges", "nodes", "pageInfo", "endCursor", "startCursor",
+    "hasNextPage", "hasPreviousPage", "cursor",
+})
+
+_SYNONYMS: dict[str, list[str]] = {
+    "org": ["organization", "organizations"],
+    "vm": ["virtual", "machine"],
+}
+
+
+def _expand_synonyms(tokens: list[str]) -> list[str]:
+    """Return tokens with synonym expansions appended for known abbreviations."""
+    result = list(tokens)
+    for t in tokens:
+        if t in _SYNONYMS:
+            result.extend(_SYNONYMS[t])
+    return result
+
+
+def build_types_bm25_corpus(ops: dict, types: dict, out_dir: Path) -> None:
+    """Build per-type BM25 search corpus and save mcp_types_bm25_corpus.json.
+
+    Indexes every object and interface type that is reachable from at least one
+    operation. Each document aggregates field-name tokens (with synonym expansion)
+    and the first 8 words of each field description. Connection fields are followed
+    one level deep so that, e.g., a ``clustersConnection`` field on a parent type
+    also contributes Cluster's own field vocabulary to the parent document.
+
+    Ops resolution per type:
+      - Direct: operations whose return type is TypeName or TypeNameConnection.
+      - Node: if XConnection.nodes → X, X inherits ops returning XConnection.
+      - Interface: if TypeA implements InterfaceB, TypeA inherits ops returning
+        InterfaceB or InterfaceBConnection.
+    """
+    # ------------------------------------------------------------------
+    # Step 1: build bare-type-name → op-name mapping
+    # ------------------------------------------------------------------
+    type_to_ops: dict[str, list[str]] = {}
+
+    for _op_type, pool in [("query", ops["queries"]), ("mutation", ops["mutations"])]:
+        for op_name, op_info in pool.items():
+            bare = op_info["return_type"].strip("[]!").strip()
+            if not bare:
+                continue
+            if bare.endswith("Connection"):
+                # The Connection type itself gets the op.
+                type_to_ops.setdefault(bare, []).append(op_name)
+                # Resolve Connection → node type via Connection.nodes field.
+                conn_td = types.get(bare, {})
+                nodes_field = conn_td.get("fields", {}).get("nodes", {})
+                node_bare = nodes_field.get("type", "").strip("[]!").strip()
+                if node_bare and node_bare not in _SCALARS:
+                    type_to_ops.setdefault(node_bare, []).append(op_name)
+            else:
+                type_to_ops.setdefault(bare, []).append(op_name)
+
+    # ------------------------------------------------------------------
+    # Step 2: interface inheritance — propagate interface ops to implementors
+    # ------------------------------------------------------------------
+    for type_name, td in types.items():
+        if td.get("kind") != "type":
+            continue
+        for iface_name in td.get("implements", []):
+            # Direct interface ops
+            for op_name in type_to_ops.get(iface_name, []):
+                type_to_ops.setdefault(type_name, []).append(op_name)
+            # Interface connection ops (InterfaceNameConnection)
+            iface_conn = iface_name + "Connection"
+            for op_name in type_to_ops.get(iface_conn, []):
+                type_to_ops.setdefault(type_name, []).append(op_name)
+
+    # ------------------------------------------------------------------
+    # Step 3: build corpus — one document per reachable type
+    # ------------------------------------------------------------------
+    corpus: list[list[str]] = []
+    meta: list[dict] = []
+
+    for type_name, td in types.items():
+        if td.get("kind") not in ("type", "interface"):
+            continue
+        op_list = type_to_ops.get(type_name, [])
+        if not op_list:
+            continue
+
+        # Deduplicate while preserving insertion order.
+        seen_ops: set[str] = set()
+        deduped_ops: list[str] = []
+        for op in op_list:
+            if op not in seen_ops:
+                seen_ops.add(op)
+                deduped_ops.append(op)
+
+        # Token construction:
+        # 1. Type name tokens with synonym expansion.
+        tokens = _expand_synonyms(_split_camel(type_name))
+
+        for field_name, finfo in td.get("fields", {}).items():
+            if field_name in _TYPE_SKIP_FIELDS:
+                continue
+            # 2a. Field name tokens with synonym expansion.
+            tokens.extend(_expand_synonyms(_split_camel(field_name)))
+            # 2b. First 8 words of field description.
+            desc = finfo.get("description")
+            if desc:
+                tokens.extend(desc.lower().split()[:8])
+            # 3. Follow Connection fields one level deep (depth=0, no recursion).
+            field_bare = finfo.get("type", "").strip("[]!").strip()
+            if field_bare.endswith("Connection"):
+                conn_td = types.get(field_bare, {})
+                nodes_field = conn_td.get("fields", {}).get("nodes", {})
+                node_bare = nodes_field.get("type", "").strip("[]!").strip()
+                if node_bare and node_bare not in _SCALARS:
+                    node_td = types.get(node_bare, {})
+                    for sub_fname in node_td.get("fields", {}).keys():
+                        if sub_fname in _TYPE_SKIP_FIELDS:
+                            continue
+                        tokens.extend(_expand_synonyms(_split_camel(sub_fname)))
+
+        corpus.append(_stem_all(tokens))
+        meta.append({"name": type_name, "ops": deduped_ops})
+
+    out = {"meta": meta, "corpus": corpus}
+    corpus_path = out_dir / "mcp_types_bm25_corpus.json"
+    corpus_path.write_text(json.dumps(out, separators=(",", ":")))
+    print(
+        f"  mcp_types_bm25_corpus.json: {len(corpus)} types ({corpus_path.stat().st_size // 1024}KB)",
+        flush=True,
+    )
+
+
 def main() -> None:
     repo_root = Path(__file__).parent.parent.parent
     schemas_dir = repo_root / "schemas"
@@ -289,6 +420,7 @@ def main() -> None:
 
     build_bm25_corpus(ops, types, out_dir)
     build_fields_corpus(types, schema_version, out_dir)
+    build_types_bm25_corpus(ops, types, out_dir)
 
 
 if __name__ == "__main__":
