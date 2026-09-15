@@ -35,6 +35,11 @@ class TokenManager:
             return None
 
     def _fetch_token(self) -> str:
+        # `requests` and `urllib` (used for the GraphQL calls in client.py) each
+        # consult a different default trust store, so `verify` must be threaded
+        # through here explicitly rather than relying on an ambient env var.
+        # When ca_cert_path is unset, `verify=True` reproduces today's default
+        # behavior (validate against the certifi bundle) exactly.
         resp = requests.post(
             self._config.token_uri,
             json={
@@ -44,6 +49,7 @@ class TokenManager:
             },
             headers={"User-Agent": _user_agent()},
             timeout=30,
+            verify=self._config.ca_cert_path or True,
         )
         resp.raise_for_status()
         data = resp.json()

@@ -64,8 +64,30 @@ You can also point this file at a service account file:
 | `RSC_URL` | RSC base URL |
 | `RSC_CLIENT_ID` | OAuth2 client ID |
 | `RSC_CLIENT_SECRET` | OAuth2 client secret |
+| `RSC_CA_CERT_FILE` | Path to a CA certificate (PEM) to trust, for connecting to a self-signed RSC endpoint |
 
-**Precedence:** `RSC_SERVICE_ACCOUNT_FILE` → `RSC_URL`/`RSC_CLIENT_ID`/`RSC_CLIENT_SECRET` → `~/.rsc/config.json`
+**Precedence:** `RSC_SERVICE_ACCOUNT_FILE` → `RSC_URL`/`RSC_CLIENT_ID`/`RSC_CLIENT_SECRET` → `~/.rsc/config.json`. `RSC_CA_CERT_FILE` sits outside that ladder: it is an environment variable only, and applies whichever of the above you use to supply credentials.
+
+### Connecting to a self-signed endpoint
+
+Some RSC-Private deployments present a self-signed TLS certificate rather than one signed by a public CA. `rsc-client` never disables certificate validation — instead, point it at the certificate to trust as an explicit trust anchor:
+
+```bash
+export RSC_CA_CERT_FILE=/path/to/rsc-p-ca.pem
+```
+
+That is the only way to set it — deliberately, so there is one place to configure it and one place to look when it is not working. It is read on every configuration path, including when credentials come from a service account file.
+
+Full TLS validation still runs — chain, hostname, and expiry are all checked; `RSC_CA_CERT_FILE` only changes which root is trusted. The file is validated when the config is loaded (existence, readability, and that it parses as PEM), so a bad path fails immediately with a clear error instead of surfacing as a confusing handshake failure later. A warning recommending rotation to a CA-signed certificate is printed once per process whenever it is set.
+
+Two things to know before you use it:
+
+- **Setting it means your certificate is the *only* one trusted.** Without it, the client trusts the usual public certificate authorities and can reach any normal HTTPS endpoint. With it, it trusts your certificate and nothing else — the same way `curl --cacert` behaves. That is correct for RSC-Private, where the client only ever talks to the one host. It only matters if a single process also needs to reach an endpoint with a publicly-signed certificate; in that case point `RSC_CA_CERT_FILE` at a file containing both, since the client will not combine them for you:
+
+  ```bash
+  cat "$(python -m certifi)" rsc-p-ca.pem > combined.pem
+  ```
+- **The URL must match the certificate's SAN.** A self-signed bootstrap certificate on RSC-Private commonly carries an IP-only Subject Alternative Name with no DNS name. If you connect by hostname (e.g. `https://rsc-p.example.lab`) against a certificate whose SAN only lists an IP address, verification fails with a hostname mismatch even though the certificate itself is correctly trusted — connect by the IP address in the SAN instead.
 
 ---
 

@@ -1,4 +1,6 @@
+import ssl
 import sys
+import urllib.request
 
 from sgqlc.endpoint.http import HTTPEndpoint
 
@@ -27,10 +29,24 @@ class RSCClient:
         token = self._token_manager.get_token()
         headers = {"Authorization": f"Bearer {token}"}
         headers.update(_sdk_headers(self._product, self._product_version))
+        urlopen = None
+        if self._config.ca_cert_path is not None:
+            # sgqlc's HTTPEndpoint defaults to plain urllib.request.urlopen,
+            # which trusts the OpenSSL/system store — a different default
+            # trust anchor than the `requests` call in auth.py. `urlopen` is
+            # a documented extension point (sgqlc.endpoint.http.HTTPEndpoint),
+            # so the custom trust anchor goes in through it rather than by
+            # subclassing HTTPEndpoint, monkey-patching, or mutating the
+            # process-wide default SSL context. Full validation (chain,
+            # hostname, expiry) still runs — only the trust anchor changes.
+            ctx = ssl.create_default_context(cafile=self._config.ca_cert_path)
+            opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
+            urlopen = opener.open
         return HTTPEndpoint(
             f"{self._config.url}/api/graphql",
             headers,
             timeout=30,
+            urlopen=urlopen,
         )
 
     def execute(self, operation, variables: dict = None, max_records: int = None):
