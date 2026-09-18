@@ -6,7 +6,7 @@
 
 1. A GraphQL SDL file is added to `schemas/` with the filename `YYYYMMDD.graphql`
 2. Pushing that file to `main` triggers the CI workflow (`.github/workflows/schema-update.yml`)
-3. CI converts the SDL to an introspection JSON (required by the installed version of sgqlc), generates `src/rsc/schema.py`, bumps the package version to `YYYY.M.D`, commits, tags, and publishes to PyPI
+3. CI converts the SDL to an introspection JSON (required by the installed version of sgqlc), generates `src/rsc/schema.py`, bumps the date component of the package version to `X.Y.YYYYMMDD`, commits, tags, and publishes to PyPI
 
 ## Adding a new schema
 
