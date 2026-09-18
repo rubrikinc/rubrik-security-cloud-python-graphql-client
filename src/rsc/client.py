@@ -2,6 +2,7 @@ import ssl
 import sys
 import urllib.request
 
+import certifi
 from sgqlc.endpoint.http import HTTPEndpoint
 
 from ._version import _sdk_headers
@@ -29,24 +30,29 @@ class RSCClient:
         token = self._token_manager.get_token()
         headers = {"Authorization": f"Bearer {token}"}
         headers.update(_sdk_headers(self._product, self._product_version))
-        urlopen = None
-        if self._config.ca_cert_path is not None:
-            # sgqlc's HTTPEndpoint defaults to plain urllib.request.urlopen,
-            # which trusts the OpenSSL/system store — a different default
-            # trust anchor than the `requests` call in auth.py. `urlopen` is
-            # a documented extension point (sgqlc.endpoint.http.HTTPEndpoint),
-            # so the custom trust anchor goes in through it rather than by
-            # subclassing HTTPEndpoint, monkey-patching, or mutating the
-            # process-wide default SSL context. Full validation (chain,
-            # hostname, expiry) still runs — only the trust anchor changes.
-            ctx = ssl.create_default_context(cafile=self._config.ca_cert_path)
-            opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
-            urlopen = opener.open
+        # sgqlc's HTTPEndpoint defaults to plain urllib.request.urlopen, which
+        # trusts the OpenSSL/system default store — a different, less
+        # predictable trust anchor than the `requests` call in auth.py (which
+        # falls back to the certifi bundle automatically). That default store
+        # varies by Python distribution: a Homebrew-linked Python populates it
+        # from the OS, while an un-initialized python.org install can have an
+        # empty one, causing this exact endpoint to fail TLS verification
+        # against a publicly-trusted, correctly-configured RSC server for no
+        # reason other than which Python happened to create the venv. `urlopen`
+        # is a documented extension point (sgqlc.endpoint.http.HTTPEndpoint),
+        # so the trust anchor goes in through it rather than by subclassing
+        # HTTPEndpoint, monkey-patching, or mutating the process-wide default
+        # SSL context. Full validation (chain, hostname, expiry) still runs —
+        # only the trust anchor changes, and it's now always explicit: the
+        # pinned certifi bundle by default, or `ca_cert_path` when set.
+        cafile = self._config.ca_cert_path or certifi.where()
+        ctx = ssl.create_default_context(cafile=cafile)
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
         return HTTPEndpoint(
             f"{self._config.url}/api/graphql",
             headers,
             timeout=30,
-            urlopen=urlopen,
+            urlopen=opener.open,
         )
 
     def execute(self, operation, variables: dict = None, max_records: int = None):

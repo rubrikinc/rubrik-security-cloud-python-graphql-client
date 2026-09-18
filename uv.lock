@@ -9,11 +9,11 @@ resolution-markers = [
 
 [[package]]
 name = "certifi"
-version = "2026.6.17"
+version = "2026.4.22"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c9/c7/424b75da314c1045981bd9777432fad05a9e0c69daa4ed7e308bbaffe405/certifi-2026.6.17.tar.gz", hash = "sha256:024c88eeec92ca068db80f02b8b07c9cef7b9fe261d1d535abfd5abd6f6af432", size = 134594, upload-time = "2026-06-17T10:31:07.894Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/ee/6caf7a40c36a1220410afe15a1cc64993a1f864871f698c0f93acb72842a/certifi-2026.4.22.tar.gz", hash = "sha256:8d455352a37b71bf76a79caa83a3d6c25afee4a385d632127b6afb3963f1c580", size = 137077, upload-time = "2026-04-22T11:26:11.191Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/2f/c5464532e965badff2f4c4c1a3a83f5697f0d7c407ed0cda44aaa99bb451/certifi-2026.6.17-py3-none-any.whl", hash = "sha256:2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db", size = 133289, upload-time = "2026-06-17T10:31:06.348Z" },
+    { url = "https://files.pythonhosted.org/packages/22/30/7cd8fdcdfbc5b869528b079bfb76dcdf6056b1a2097a662e5e8c04f42965/certifi-2026.4.22-py3-none-any.whl", hash = "sha256:3cb2210c8f88ba2318d29b0388d1023c8492ff72ecdde4ebdaddbb13a31b1c4a", size = 135707, upload-time = "2026-04-22T11:26:09.372Z" },
 ]
 
 [[package]]
@@ -431,6 +431,7 @@ name = "rsc-client"
 version = "1.7.20260817"
 source = { editable = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "rank-bm25" },
     { name = "requests" },
     { name = "sgqlc" },
@@ -444,6 +445,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = "==2026.4.22" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
     { name = "rank-bm25", specifier = "==0.2.2" },
     { name = "requests", specifier = "==2.34.2" },
