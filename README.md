@@ -14,6 +14,24 @@ To install directly from this repo:
 pip install git+https://github.com/rubrikinc/rubrik-security-cloud-python-graphql-client.git
 ```
 
+## Local development
+
+### Windows setup
+
+Create a virtual environment, install the package with its test dependencies, and
+run the local test suite:
+
+```powershell
+py -3 -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[test]"
+python -m pytest
+```
+
+The local test suite does not require Rubrik Security Cloud credentials. Never
+commit service-account JSON files, OAuth client secrets, or token-cache files.
+
 ## Authentication
 
 ### Service account file (recommended)
