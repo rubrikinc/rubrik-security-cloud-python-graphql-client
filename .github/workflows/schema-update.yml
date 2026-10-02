@@ -61,11 +61,16 @@ jobs:
           VERSION="${{ steps.schema.outputs.version }}"
           sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
 
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Re-lock with the new version
+        run: uv lock
+
       - name: Commit and tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/rsc/schema.py src/rsc/mcp_index.json src/rsc/mcp_types.json src/rsc/mcp_bm25_corpus.json src/rsc/mcp_fields_corpus.json src/rsc/mcp_types_bm25_corpus.json pyproject.toml
+          git add src/rsc/schema.py src/rsc/mcp_index.json src/rsc/mcp_types.json src/rsc/mcp_bm25_corpus.json src/rsc/mcp_fields_corpus.json src/rsc/mcp_types_bm25_corpus.json pyproject.toml uv.lock
           git restore --staged .github/
           git commit -m "chore: generate schema for ${{ steps.schema.outputs.date }}"
           git pull --rebase origin main
@@ -76,19 +81,15 @@ jobs:
             git push origin "$VERSION"
           fi
 
+  # PyPI's trusted publisher is bound to publish.yml, so hand off to it rather
+  # than uploading from this workflow. Pushes made with GITHUB_TOKEN don't
+  # trigger other workflows, but workflow_dispatch does.
   publish:
     needs: generate
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      id-token: write
+      actions: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install hatch
-      - run: hatch build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
