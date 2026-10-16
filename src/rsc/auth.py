@@ -4,6 +4,7 @@ import os
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -54,14 +55,15 @@ class TokenManager:
             timeout=30,
             verify=self._config.ca_cert_path or True,
         )
-        if resp.status_code == 403 and self._config.token_uri.endswith("/api/pat_login"):
+        token_path = urlparse(self._config.token_uri).path.rstrip("/")
+        if resp.status_code == 403 and token_path.endswith("/api/pat_login"):
             # RSC returns 403 (not 401) when the tenant hasn't enabled personal
             # access tokens; surface that rather than a generic HTTP error.
             raise PermissionError(
                 "Personal access token login was rejected (HTTP 403). The "
                 "Personal Access Token feature may not be enabled on this RSC "
                 f"tenant: {resp.text}"
-            )
+            ) from requests.HTTPError(response=resp)
         resp.raise_for_status()
         data = resp.json()
         token = data["access_token"]
