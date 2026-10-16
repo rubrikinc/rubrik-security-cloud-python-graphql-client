@@ -101,8 +101,8 @@ in sync with `uv.lock` (run `uv lock` after editing it).
 
 ## Credential loading precedence
 
-1. `RSC_SERVICE_ACCOUNT_FILE` env var (path to service account JSON)
+1. `RSC_SERVICE_ACCOUNT_FILE` env var (path to service account or personal access token JSON; both use the same keys, and the token endpoint comes from `access_token_uri`)
 2. `RSC_URL` + `RSC_CLIENT_ID` + `RSC_CLIENT_SECRET` env vars
 3. `~/.rsc/config.json` (direct credentials or `service_account_file` pointer)
 
-Tokens are cached in `~/.rsc/token_cache_<url-hash>.json` with `0600` permissions and reused until 60 seconds before expiry.
+Tokens are cached in `~/.rsc/token_cache_<hash>.json`, where the hash is of the URL + client ID (so a service account and a PAT on the same tenant never share a cache), with `0600` permissions and reused until 60 seconds before expiry.
