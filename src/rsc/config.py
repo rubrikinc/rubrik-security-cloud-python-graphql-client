@@ -85,8 +85,11 @@ def load_config_from_service_account(path) -> "Config":
     token_uri = sa.get("access_token_uri")
     if not token_uri:
         raise ValueError(f"Service account file missing 'access_token_uri': {path}")
-    # Derive base URL by stripping the known token path suffix
-    url = token_uri.removesuffix("/api/client_token")
+    # Derive base URL from the token URI's origin. Service account files point
+    # at /api/client_token and PAT files at a different path, so the path is
+    # not stripped by suffix.
+    parsed = urlparse(token_uri)
+    url = f"{parsed.scheme}://{parsed.netloc}"
     # Read here too: load_config() hands off to this function and returns, so a
     # caller using a service account file never reaches the env lookup there.
     ca_cert_path = os.environ.get("RSC_CA_CERT_FILE")

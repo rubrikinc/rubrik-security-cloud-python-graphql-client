@@ -16,8 +16,11 @@ class TokenManager:
         self._config = config
         self._rsc_dir = Path.home() / ".rsc"
         self._rsc_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        url_hash = hashlib.sha256(config.url.encode()).hexdigest()[:12]
-        self._cache_file = self._rsc_dir / f"token_cache_{url_hash}.json"
+        # Key on the credential, not just the tenant, so a service account and a
+        # PAT for the same tenant never share (and silently swap) a cached token.
+        cache_key = f"{config.url}|{config.client_id}"
+        key_hash = hashlib.sha256(cache_key.encode()).hexdigest()[:12]
+        self._cache_file = self._rsc_dir / f"token_cache_{key_hash}.json"
 
     def get_token(self) -> str:
         cached = self._load_cache()
@@ -51,6 +54,14 @@ class TokenManager:
             timeout=30,
             verify=self._config.ca_cert_path or True,
         )
+        if resp.status_code == 403 and self._config.token_uri.endswith("/api/pat_login"):
+            # RSC returns 403 (not 401) when the tenant hasn't enabled personal
+            # access tokens; surface that rather than a generic HTTP error.
+            raise PermissionError(
+                "Personal access token login was rejected (HTTP 403). The "
+                "Personal Access Token feature may not be enabled on this RSC "
+                f"tenant: {resp.text}"
+            )
         resp.raise_for_status()
         data = resp.json()
         token = data["access_token"]
