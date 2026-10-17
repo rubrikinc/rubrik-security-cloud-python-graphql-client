@@ -1,0 +1,95 @@
+name: Pull Schema
+
+# Copies the newest RSC schema from rubrik-developer-center into schemas/ and
+# hands off to schema-update.yml, which regenerates, versions and publishes.
+#
+# The dev center is the source of truth for published schemas. That repo is
+# public, so this pull needs no cross-repo credential.
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: pull-schema
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPO: rubrikinc/rubrik-developer-center
+  SOURCE_DIR: docs/Rubrik-Security-Cloud-API/schemas
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find newest schema in the dev center
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME=$(gh api "repos/$SOURCE_REPO/contents/$SOURCE_DIR" --jq '.[].name' \
+            | grep -E '^[0-9]{8}\.graphql$' | sort | tail -1)
+          if [ -z "$NAME" ]; then
+            echo "No dated schema found in $SOURCE_REPO/$SOURCE_DIR" >&2
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download it
+        run: |
+          # raw.githubusercontent.com has no size limit, unlike the contents API (1 MB).
+          # It can serve a cached copy for a few minutes after a change; the next run catches up.
+          curl -fsSL -o "/tmp/${{ steps.latest.outputs.name }}" \
+            "https://raw.githubusercontent.com/$SOURCE_REPO/main/$SOURCE_DIR/${{ steps.latest.outputs.name }}"
+
+      - name: Check it builds as a schema
+        run: |
+          # Reject truncated or unparsable files before they reach main.
+          # Same graphql-core line schema-update.yml resolves to (via sgqlc).
+          pip install "graphql-core>=3.2.6,<3.3"
+          python3 -c "import sys; from graphql import build_schema; build_schema(open(sys.argv[1]).read())" \
+            "/tmp/${{ steps.latest.outputs.name }}"
+
+      - name: Compare with ours
+        id: compare
+        run: |
+          NAME="${{ steps.latest.outputs.name }}"
+          NEWEST_LOCAL=$(ls schemas/*.graphql | xargs -n1 basename | sort | tail -1)
+          if [[ "$NAME" < "$NEWEST_LOCAL" ]]; then
+            # Never move backwards, e.g. while the dev center is still being backfilled.
+            echo "Dev center newest ($NAME) is older than ours ($NEWEST_LOCAL); nothing to do"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          elif [ -f "schemas/$NAME" ] && cmp -s "/tmp/$NAME" "schemas/$NAME"; then
+            echo "schemas/$NAME is already current"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            # A new date, or the same date re-published from a newer build. The latter
+            # regenerates the code but keeps the version, so PyPI won't re-publish.
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and hand off to schema-update.yml
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME="${{ steps.latest.outputs.name }}"
+          cp "/tmp/$NAME" "schemas/$NAME"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "schemas/$NAME"
+          git commit -m "schema: update to ${NAME%.graphql}"
+          git push origin main || { git pull --rebase origin main && git push origin main; }
+          # Pushes made with GITHUB_TOKEN don't trigger other workflows, so start it explicitly.
+          gh workflow run schema-update.yml --repo "$GITHUB_REPOSITORY" --ref main
