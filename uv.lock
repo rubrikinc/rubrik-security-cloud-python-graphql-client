@@ -428,7 +428,7 @@ wheels = [
 
 [[package]]
 name = "rsc-client"
-version = "1.8.20260928"
+version = "1.8.20261012"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
