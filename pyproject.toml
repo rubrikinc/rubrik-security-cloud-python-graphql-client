@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rsc-client"
-version = "1.8.20261012"
+version = "1.9.20261012"
 description = "Low-level Python bindings for the Rubrik Security Cloud GraphQL API"
 readme = "README.md"
 license = "MIT"
@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
     "sgqlc==18",
     "requests==2.34.2",
-    "certifi==2026.4.22",
+    "certifi==2026.10.19",
     "rank-bm25==0.2.2",
     "snowballstemmer==3.1.1",
 ]
