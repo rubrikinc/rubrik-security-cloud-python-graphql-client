@@ -29,6 +29,19 @@ def _type_to_str(node) -> str:
     return node.name.value
 
 
+def _describe(sdl: str, node) -> str | None:
+    """Return the description of a schema element.
+
+    Schemas from 20261102 on carry GraphQL string descriptions, which the
+    parser keeps on the node. Older schemas carry # comments, which the
+    parser drops, so fall back to reading the comment block from the text.
+    """
+    desc = getattr(node, "description", None)
+    if desc is not None and desc.value and desc.value.strip():
+        return " ".join(desc.value.split())
+    return _extract_comment(sdl, node.loc.start)
+
+
 def _extract_comment(sdl: str, loc_start: int) -> str | None:
     """Extract the # comment block immediately preceding a field definition."""
     before = sdl[:loc_start]
@@ -57,10 +70,10 @@ def build_operations_index(sdl: str) -> dict:
             for arg in field.arguments:
                 args[arg.name.value] = {
                     "type": _type_to_str(arg.type),
-                    "description": _extract_comment(sdl, arg.loc.start),
+                    "description": _describe(sdl, arg),
                 }
             index[category][field.name.value] = {
-                "description": _extract_comment(sdl, field.loc.start),
+                "description": _describe(sdl, field),
                 "return_type": _type_to_str(field.type),
                 "args": args,
             }
@@ -93,7 +106,7 @@ def build_types_index(sdl: str) -> dict:
             for f in defn.fields:
                 fields[f.name.value] = {
                     "type": _type_to_str(f.type),
-                    "description": _extract_comment(sdl, f.loc.start),
+                    "description": _describe(sdl, f),
                 }
             entry: dict = {"kind": kind, "fields": fields}
             if kind == "type" and getattr(defn, "interfaces", None):
