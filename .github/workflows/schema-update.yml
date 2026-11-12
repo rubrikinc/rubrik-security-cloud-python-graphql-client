@@ -21,6 +21,8 @@ jobs:
       # was dispatched at. pull-schema.yml dispatches this workflow seconds
       # after it pushes a schema, and the dispatch can resolve to the commit
       # before that push, which builds the previous schema again.
+      # A manual run started from another branch also builds main. This is
+      # intended: releases come only from main.
       - uses: actions/checkout@v4
         with:
           ref: main
