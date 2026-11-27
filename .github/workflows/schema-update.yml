@@ -31,8 +31,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Install the package's own pinned dependencies, so the bindings are
+      # generated with the same sgqlc (and graphql-core) that users run.
       - name: Install dependencies
-        run: pip install sgqlc graphql-core snowballstemmer hatch twine
+        run: pip install . hatch twine
 
       - name: Find latest schema file
         id: schema
