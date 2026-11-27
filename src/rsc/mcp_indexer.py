@@ -59,15 +59,17 @@ def _extract_comment(sdl: str, loc_start: int) -> str | None:
 
 
 def build_operations_index(sdl: str) -> dict:
+    # graphql-core 3.3 sets empty AST lists (arguments, fields, values, types)
+    # to None; earlier versions use an empty list. "or ()" handles both.
     doc = gql_parse(sdl)
     index: dict = {"queries": {}, "mutations": {}}
     for defn in doc.definitions:
         if not (hasattr(defn, "name") and defn.name and defn.name.value in ("Query", "Mutation")):
             continue
         category = "queries" if defn.name.value == "Query" else "mutations"
-        for field in defn.fields:
+        for field in defn.fields or ():
             args = {}
-            for arg in field.arguments:
+            for arg in field.arguments or ():
                 args[arg.name.value] = {
                     "type": _type_to_str(arg.type),
                     "description": _describe(sdl, arg),
@@ -98,12 +100,12 @@ def build_types_index(sdl: str) -> dict:
         if name in ("Query", "Mutation"):
             continue
         if kind == "enum":
-            types[name] = {"kind": kind, "values": [v.name.value for v in defn.values]}
+            types[name] = {"kind": kind, "values": [v.name.value for v in defn.values or ()]}
         elif kind == "union":
-            types[name] = {"kind": kind, "types": [t.name.value for t in defn.types]}
+            types[name] = {"kind": kind, "types": [t.name.value for t in defn.types or ()]}
         else:
             fields = {}
-            for f in defn.fields:
+            for f in defn.fields or ():
                 fields[f.name.value] = {
                     "type": _type_to_str(f.type),
                     "description": _describe(sdl, f),
